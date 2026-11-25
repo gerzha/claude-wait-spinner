@@ -1,9 +1,0 @@
-{
-  "name": "green-portal",
-  "version": "0.1.0",
-  "description": "A swirling green portal above the prompt while Claude is working; every tool call flies out of it by name",
-  "author": {
-    "name": "gerzha",
-    "url": "https://github.com/gerzha"
-  }
-}

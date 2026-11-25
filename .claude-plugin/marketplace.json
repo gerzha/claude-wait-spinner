@@ -11,29 +11,9 @@
       "description": "Matrix-style katakana rain in Claude orange above the prompt while Claude is working"
     },
     {
-      "name": "space-dogfight",
-      "source": "./plugins/space-dogfight",
-      "description": "A starfighter dogfight above the prompt while Claude is working: a rebel fighter shoots down enemy interceptors"
-    },
-    {
       "name": "pulse-monitor",
       "source": "./plugins/pulse-monitor",
       "description": "A heart-monitor trace above the prompt while Claude is working; every tool call fires a beat"
-    },
-    {
-      "name": "flaming-eye",
-      "source": "./plugins/flaming-eye",
-      "description": "A lidless eye wreathed in flame watches above the prompt while Claude is working; tool calls make it flare"
-    },
-    {
-      "name": "neon-cycles",
-      "source": "./plugins/neon-cycles",
-      "description": "Two light cycles race on a neon grid above the prompt while Claude is working: Claude orange against cyan"
-    },
-    {
-      "name": "green-portal",
-      "source": "./plugins/green-portal",
-      "description": "A swirling green portal above the prompt while Claude is working; every tool call flies out of it by name"
     }
   ]
 }
