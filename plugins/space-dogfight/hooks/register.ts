@@ -1,179 +1,115 @@
-import type { EngineInterface, Register, Timer } from 'claude-code'
+import type { Register } from 'claude-code'
+import { band, Gfx, mix, rand, randInt, type Scene } from './kit'
 
 // A starfighter dogfight in the band above the prompt while a model turn runs: a rebel
 // fighter in Claude-orange stripes holds the left of the screen and shoots down dark enemy
-// interceptors weaving in from the right, over a scrolling starfield. Drawn with half blocks
-// (two pixels per cell, true colour); the row disappears when the turn ends.
+// interceptors weaving in from the right, over a scrolling starfield and nebulae.
 
-const FRAME_MS = 60
-const BAND_ROWS = 7
-const MAX_DENIES = 20 // consecutive refused blits before the loop parks itself
-const PARK_MS = 500 // while parked, how often to ask for a redraw of the band
-const RASTER_KEY = 'dogfight'
-const MAX_COLUMNS = 512
-const MIN_COLUMNS = 30
+const SKY_TOP = 0x05070e
+const SKY_BOTTOM = 0x0a0f1d
+const HULL = 0xe6e8ee
+const HULL_SHADE = 0x9aa1ad
+const WING = 0x8a919c
+const STRIPE = 0xd97757
+const CANOPY = 0x4fc8ff
+const ENGINE = 0xff8a3d
+const ENEMY_HULL = 0x4a525f
+const ENEMY_WING = 0x7d8796
+const ENEMY_EYE = 0xff3b3b
+const HERO_LASER = 0xff4636
+const ENEMY_LASER = 0x52ff5e
+const SHIELD = 0x7fd4ff
+const SCORE = 0xd97757
 
-const DEFAULT_COLOR = 0x01000000
-const EMPTY = DEFAULT_COLOR
-const SPACE = 0x20
-const UPPER_HALF = 0x2580
-const LOWER_HALF = 0x2584
+const FIGHTER_W = 13
+const FIGHTER_H = 6
+const ENEMY_W = 8
+const ENEMY_H = 6
 
-const PALETTE: Record<string, number> = {
-  W: 0xe8e8ec, // hull
-  G: 0x8a8f98, // wings
-  O: 0xd97757, // stripes, Claude orange
-  C: 0x5ad1ff, // canopy
-  S: 0x9aa6b6, // interceptor plating
-  s: 0x58616e, // interceptor edges
-  R: 0xff4040, // interceptor sensor light
-}
-
-// 12 x 5, facing right; the cannon fires from the nose, the engine glows at the tail.
-const FIGHTER = [
-  '.OOO........',
-  '..GGGG......',
-  '.WWWWWWWCCWW',
-  '..GGGG......',
-  '.OOO........',
-]
-// 7 x 5, facing left.
-const INTERCEPTOR = [
-  '....ss.',
-  '..sSSSS',
-  'RSSSSSS',
-  '..sSSSS',
-  '....ss.',
-]
-
-const ENGINE = [0xffd27a, 0xff8a3d, 0xff5a2a]
-const HERO_BOLT = [0xffffff, 0xff5040, 0xe02a1e, 0x9c1a12]
-const ENEMY_BOLT = [0xffffff, 0x6dff6a, 0x2fd13a]
-const BLAST = [0xffffff, 0xfff2a8, 0xffc04a, 0xff7a2a, 0xd9452b, 0x7a2a1c]
-const SHIELD = 0x8fd8ff
-const STARS = [0x343841, 0x555c68, 0x8f97a5] // far, mid, near
-const SCORE_COLOR = 0xa8552f
-
-type Sprite = { w: number; h: number; px: Uint32Array }
 type Enemy = { x: number; y: number; vx: number; holdX: number; phase: number; wobble: number; cooldown: number }
-type Bolt = { x: number; y: number; vx: number; colors: number[]; fromHero: boolean }
-type Particle = { x: number; y: number; vx: number; vy: number; life: number; max: number }
-type Star = { x: number; y: number; layer: number }
+type Bolt = { x: number; y: number; vx: number; fromHero: boolean }
+type Blast = { x: number; y: number; age: number; size: number }
+type Spark = { x: number; y: number; vx: number; vy: number; life: number; max: number }
+type Star = { x: number; y: number; layer: number; tw: number }
 
-const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-const B64_CODES = Array.from(B64).map(ch => ch.charCodeAt(0))
-
-const randInt = (min: number, max: number) => min + Math.floor(Math.random() * (max - min + 1))
-const rand = (min: number, max: number) => min + Math.random() * (max - min)
-
-function sprite(rows: string[]): Sprite {
-  const h = rows.length
-  const w = rows[0]?.length ?? 0
-  const px = new Uint32Array(w * h).fill(EMPTY)
-  rows.forEach((row, y) => {
-    Array.from(row).forEach((ch, x) => {
-      const color = PALETTE[ch]
-      if (color !== undefined) px[y * w + x] = color
-    })
-  })
-  return { w, h, px }
-}
-
-const FIGHTER_SPRITE = sprite(FIGHTER)
-const ENEMY_SPRITE = sprite(INTERCEPTOR)
-
-// Byte length is always a multiple of 12 (3 u32 per cell), so no padding is needed.
-function toBase64(bytes: Uint8Array): string {
-  const out = new Uint8Array((bytes.length / 3) * 4)
-  for (let i = 0, o = 0; i < bytes.length; i += 3, o += 4) {
-    const n = ((bytes[i] ?? 0) << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0)
-    out[o] = B64_CODES[(n >> 18) & 63] ?? 0
-    out[o + 1] = B64_CODES[(n >> 12) & 63] ?? 0
-    out[o + 2] = B64_CODES[(n >> 6) & 63] ?? 0
-    out[o + 3] = B64_CODES[n & 63] ?? 0
-  }
-  let text = ''
-  for (let i = 0; i < out.length; i += 8192) {
-    text += String.fromCharCode(...out.subarray(i, i + 8192))
-  }
-  return text
-}
-
-class Dogfight {
-  readonly columns: number
-  readonly rows: number
-  private readonly width: number
-  private readonly height: number
+class Dogfight implements Scene {
   private readonly heroX = 3
   private readonly maxEnemies: number
-  private readonly pixels: Uint32Array
-  private readonly words: Uint32Array
   private readonly stars: Star[]
+  private readonly nebulae: Array<{ x: number; y: number; r: number; color: number }>
   private heroY: number
   private enemies: Enemy[] = []
   private bolts: Bolt[] = []
-  private particles: Particle[] = []
+  private blasts: Blast[] = []
+  private sparks: Spark[] = []
   private cooldown = 8
   private shield = 0
   private spawnIn = 6
   private frameNo = 0
   private kills = 0
 
-  constructor(columns: number, rows: number) {
-    this.columns = columns
-    this.rows = rows
-    this.width = columns
-    this.height = rows * 2
-    this.heroY = (this.height - FIGHTER_SPRITE.h) / 2
-    this.maxEnemies = Math.max(1, Math.min(4, Math.floor((columns - 30) / 18) + 1))
-    this.pixels = new Uint32Array(this.width * this.height)
-    this.words = new Uint32Array(columns * rows * 3)
-    this.stars = Array.from({ length: Math.ceil((this.width * this.height) / 60) }, () => ({
-      x: rand(0, this.width),
-      y: randInt(0, this.height - 1),
+  constructor(
+    private readonly width: number,
+    private readonly height: number,
+  ) {
+    this.heroY = (height - FIGHTER_H) / 2
+    this.maxEnemies = Math.max(1, Math.min(4, Math.floor((width - 30) / 18) + 1))
+    this.stars = Array.from({ length: Math.ceil((width * height) / 45) }, () => ({
+      x: rand(0, width),
+      y: rand(0, height),
       layer: randInt(0, 2),
+      tw: rand(0, 6.28),
     }))
+    this.nebulae = [
+      { x: width * 0.35, y: height * 0.3, r: height * 1.6, color: 0x3a1d5c },
+      { x: width * 0.8, y: height * 0.8, r: height * 1.3, color: 0x0f3b4a },
+    ]
   }
 
   private get maxY(): number {
-    return Math.max(0, this.height - FIGHTER_SPRITE.h)
+    return Math.max(0, this.height - FIGHTER_H)
   }
 
   step(): void {
     this.frameNo += 1
     for (const star of this.stars) {
-      star.x -= [0.15, 0.35, 0.8][star.layer] ?? 0.3
-      if (star.x < 0) {
-        star.x += this.width
-        star.y = randInt(0, this.height - 1)
+      star.x -= [0.12, 0.3, 0.75][star.layer] ?? 0.3
+      if (star.x < -2) {
+        star.x += this.width + 2
+        star.y = rand(0, this.height)
       }
+    }
+    for (const n of this.nebulae) {
+      n.x -= 0.02
+      if (n.x < -n.r) n.x = this.width + n.r
     }
     this.stepHero()
     this.stepEnemies()
     this.stepBolts()
-    for (const p of this.particles) {
+    for (const b of this.blasts) b.age += 1
+    this.blasts = this.blasts.filter(b => b.age < 14)
+    for (const p of this.sparks) {
       p.x += p.vx
       p.y += p.vy
-      p.vx *= 0.92
-      p.vy *= 0.92
+      p.vx *= 0.93
+      p.vy *= 0.93
       p.life -= 1
     }
-    this.particles = this.particles.filter(p => p.life > 0)
+    this.sparks = this.sparks.filter(p => p.life > 0)
   }
 
   // Chase the nearest interceptor's line, weaving a little; fire when lined up.
   private stepHero(): void {
     if (this.shield > 0) this.shield -= 1
     this.cooldown -= 1
-    const onScreen = this.enemies.filter(e => e.x < this.width - ENEMY_SPRITE.w - 3)
-    const target = onScreen.sort((a, b) => a.x - b.x)[0]
+    const target = this.enemies.filter(e => e.x < this.width - ENEMY_W - 2).sort((a, b) => a.x - b.x)[0]
     const bob = Math.sin(this.frameNo / 9) * 0.8
-    const wanted = target ? target.y : this.maxY / 2 + bob
-    this.heroY += Math.max(-0.45, Math.min(0.45, wanted - this.heroY))
+    const wanted = target ? target.y + (ENEMY_H - FIGHTER_H) / 2 : this.maxY / 2 + bob
+    this.heroY += Math.max(-0.4, Math.min(0.4, wanted - this.heroY))
     this.heroY = Math.max(0, Math.min(this.maxY, this.heroY))
-    if (target && this.cooldown <= 0 && Math.abs(target.y - this.heroY) < 1.5) {
-      const y = Math.round(this.heroY) + 2
-      this.bolts.push({ x: this.heroX + FIGHTER_SPRITE.w, y, vx: 4, colors: HERO_BOLT, fromHero: true })
+    if (target && this.cooldown <= 0 && Math.abs(target.y + ENEMY_H / 2 - (this.heroY + FIGHTER_H / 2)) < 1.4) {
+      const cy = this.heroY + FIGHTER_H / 2
+      this.bolts.push({ x: this.heroX + FIGHTER_W, y: cy, vx: 2.6, fromHero: true })
       this.cooldown = randInt(9, 16)
     }
   }
@@ -183,24 +119,24 @@ class Dogfight {
     if (this.spawnIn <= 0 && this.enemies.length < this.maxEnemies) {
       this.enemies.push({
         x: this.width + 1,
-        y: rand(0, this.maxY),
-        vx: -rand(0.5, 1.1),
-        holdX: rand(this.heroX + FIGHTER_SPRITE.w + 20, Math.max(this.heroX + FIGHTER_SPRITE.w + 21, this.width - 14)),
+        y: rand(0, Math.max(0, this.height - ENEMY_H)),
+        vx: -rand(0.4, 0.9),
+        holdX: rand(this.heroX + FIGHTER_W + 18, Math.max(this.heroX + FIGHTER_W + 19, this.width - 12)),
         phase: rand(0, Math.PI * 2),
-        wobble: rand(0.6, 2.2),
+        wobble: rand(0.6, 2),
         cooldown: randInt(15, 35),
       })
-      this.spawnIn = randInt(12, 30)
+      this.spawnIn = randInt(14, 34)
     }
     for (const e of this.enemies) {
-      e.phase += 0.12
+      e.phase += 0.1
       // Fly in to a station in front of the fighter, then strafe up and down there.
       if (e.x > e.holdX) e.x += e.vx
-      else e.x += Math.sin(e.phase * 0.4) * 0.2
-      e.y = Math.max(0, Math.min(this.maxY, e.y + Math.sin(e.phase) * e.wobble * 0.18))
+      else e.x += Math.sin(e.phase * 0.4) * 0.15
+      e.y = Math.max(0, Math.min(this.height - ENEMY_H, e.y + Math.sin(e.phase) * e.wobble * 0.15))
       e.cooldown -= 1
       if (e.cooldown <= 0 && e.x < this.width - 6) {
-        this.bolts.push({ x: Math.round(e.x) - 1, y: Math.round(e.y) + 2, vx: -3, colors: ENEMY_BOLT, fromHero: false })
+        this.bolts.push({ x: e.x, y: e.y + ENEMY_H / 2, vx: -2, fromHero: false })
         e.cooldown = randInt(25, 55)
       }
     }
@@ -213,178 +149,115 @@ class Dogfight {
       if (bolt.x < -4 || bolt.x > this.width + 4) continue
       if (bolt.fromHero) {
         const hit = this.enemies.find(
-          e =>
-            e.x < this.width - ENEMY_SPRITE.w &&
-            bolt.x + 3 >= e.x &&
-            bolt.x <= e.x + ENEMY_SPRITE.w &&
-            bolt.y >= Math.round(e.y) &&
-            bolt.y < Math.round(e.y) + ENEMY_SPRITE.h,
+          e => e.x < this.width - ENEMY_W && bolt.x >= e.x && bolt.x <= e.x + ENEMY_W && bolt.y >= e.y && bolt.y <= e.y + ENEMY_H,
         )
         if (hit) {
           this.enemies = this.enemies.filter(e => e !== hit)
           this.kills += 1
-          this.explode(hit.x + ENEMY_SPRITE.w / 2, hit.y + ENEMY_SPRITE.h / 2, 14)
+          this.explode(hit.x + ENEMY_W / 2, hit.y + ENEMY_H / 2, 3.2, 16)
           continue
         }
-      } else {
-        const top = Math.round(this.heroY)
-        if (bolt.x <= this.heroX + FIGHTER_SPRITE.w && bolt.y >= top && bolt.y < top + FIGHTER_SPRITE.h) {
-          this.shield = 4
-          this.explode(this.heroX + FIGHTER_SPRITE.w, bolt.y, 4)
-          continue
-        }
+      } else if (bolt.x <= this.heroX + FIGHTER_W && bolt.y >= this.heroY && bolt.y <= this.heroY + FIGHTER_H) {
+        this.shield = 6
+        this.explode(this.heroX + FIGHTER_W - 1, bolt.y, 1.2, 5)
+        continue
       }
       kept.push(bolt)
     }
     this.bolts = kept
   }
 
-  private explode(x: number, y: number, n: number): void {
+  private explode(x: number, y: number, size: number, n: number): void {
+    this.blasts.push({ x, y, age: 0, size })
     for (let i = 0; i < n; i++) {
       const angle = rand(0, Math.PI * 2)
-      const speed = rand(0.3, 1.6)
-      const life = randInt(5, 12)
-      this.particles.push({ x, y, vx: Math.cos(angle) * speed * 1.6, vy: Math.sin(angle) * speed * 0.7, life, max: life })
+      const speed = rand(0.2, 1.1) * size * 0.5
+      const life = randInt(6, 14)
+      this.sparks.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed * 0.6, life, max: life })
     }
   }
 
-  private plot(x: number, y: number, color: number): void {
-    const xi = Math.round(x)
-    const yi = Math.round(y)
-    if (xi < 0 || yi < 0 || xi >= this.width || yi >= this.height) return
-    this.pixels[yi * this.width + xi] = color
-  }
-
-  private blitSprite(s: Sprite, x: number, y: number, tint?: number): void {
-    const x0 = Math.round(x)
-    const y0 = Math.round(y)
-    for (let sy = 0; sy < s.h; sy++) {
-      for (let sx = 0; sx < s.w; sx++) {
-        const c = s.px[sy * s.w + sx] ?? EMPTY
-        if (c !== EMPTY) this.plot(x0 + sx, y0 + sy, tint ?? c)
-      }
+  draw(g: Gfx): void {
+    g.sky(SKY_TOP, SKY_BOTTOM)
+    for (const n of this.nebulae) g.glow(n.x, n.y, n.r, n.color, 0.55, 0.45)
+    for (const star of this.stars) {
+      const tw = 0.6 + 0.4 * Math.sin(star.tw + this.frameNo * 0.15)
+      const color = [0x5c6577, 0x9aa6bb, 0xe8eeff][star.layer] ?? 0x9aa6bb
+      if (star.layer === 2) g.line(star.x, star.y, star.x + 0.9, star.y, 0.1, color, 0.45)
+      else g.disc(star.x, star.y, 0.08 + star.layer * 0.05, color, tw)
     }
-  }
-
-  frame(): string {
-    const { pixels, words, width, columns, rows } = this
-    pixels.fill(EMPTY)
-    for (const star of this.stars) this.plot(star.x, star.y, STARS[star.layer] ?? STARS[0]!)
-    for (const e of this.enemies) this.blitSprite(ENEMY_SPRITE, e.x, e.y)
-    const heroTop = Math.round(this.heroY)
-    this.blitSprite(FIGHTER_SPRITE, this.heroX, heroTop, this.shield % 2 === 1 ? SHIELD : undefined)
-    const flame = ENGINE[this.frameNo % ENGINE.length] ?? ENGINE[0]!
-    this.plot(this.heroX, heroTop + 2, flame)
-    if (this.frameNo % 3 !== 0) this.plot(this.heroX - 1, heroTop + 2, ENGINE[2]!)
+    for (const e of this.enemies) this.drawEnemy(g, e.x, e.y)
+    this.drawFighter(g, this.heroX, this.heroY)
     for (const bolt of this.bolts) {
-      bolt.colors.forEach((c, k) => this.plot(bolt.x - Math.sign(bolt.vx) * k, bolt.y, c))
+      const dir = Math.sign(bolt.vx)
+      const color = bolt.fromHero ? HERO_LASER : ENEMY_LASER
+      g.glow(bolt.x - dir * 1.3, bolt.y, 2.6, color, 1.3, 0.3)
+      g.line(bolt.x - dir * 2.6, bolt.y, bolt.x, bolt.y, 0.26, mix(color, 0xffffff, 0.55), 1, 0.8)
     }
-    for (const p of this.particles) {
-      const age = 1 - p.life / p.max
-      this.plot(p.x, p.y, BLAST[Math.min(BLAST.length - 1, Math.floor(age * BLAST.length))] ?? BLAST[0]!)
+    for (const b of this.blasts) {
+      const t = b.age / 14
+      g.glow(b.x, b.y, b.size * (0.6 + t * 1.6), 0xff7a2a, 1.6 * (1 - t))
+      g.glow(b.x, b.y, b.size * (0.3 + t * 0.7), 0xffe7a0, 1.8 * (1 - t) * (1 - t))
+      if (b.age < 8) g.ring(b.x, b.y, b.size * (0.4 + t * 2.4), 0.18, 0xffd9a0, 0.7 * (1 - t * 1.7))
     }
-
-    // Two pixels per cell: the upper one as the glyph's colour, the lower one as its background.
-    for (let cy = 0; cy < rows; cy++) {
-      for (let cx = 0; cx < columns; cx++) {
-        const hi = pixels[2 * cy * width + cx] ?? EMPTY
-        const lo = pixels[(2 * cy + 1) * width + cx] ?? EMPTY
-        const i = (cy * columns + cx) * 3
-        if (hi === EMPTY && lo === EMPTY) {
-          words[i] = SPACE
-          words[i + 1] = DEFAULT_COLOR
-          words[i + 2] = DEFAULT_COLOR
-        } else if (hi === EMPTY) {
-          words[i] = LOWER_HALF
-          words[i + 1] = lo
-          words[i + 2] = DEFAULT_COLOR
-        } else {
-          words[i] = UPPER_HALF
-          words[i + 1] = hi
-          words[i + 2] = lo
-        }
-      }
+    for (const p of this.sparks) {
+      const t = 1 - p.life / p.max
+      const color = t < 0.3 ? 0xfff0b0 : t < 0.6 ? 0xffa040 : 0xd9452b
+      g.line(p.x - p.vx * 1.5, p.y - p.vy * 1.5, p.x, p.y, 0.16, color, 1 - t * 0.6)
     }
-    this.text(`KO ${this.kills}`, columns - 7, 0, SCORE_COLOR)
-    return toBase64(new Uint8Array(words.buffer))
+    const label = `KO ${this.kills}`
+    g.text(label, this.width - label.length * 1.2 - 1, 0.6, 0.3, SCORE, 0.85)
   }
 
-  private text(s: string, x: number, row: number, color: number): void {
-    Array.from(s).forEach((ch, k) => {
-      const cx = x + k
-      if (cx < 0 || cx >= this.columns || row >= this.rows) return
-      const i = (row * this.columns + cx) * 3
-      this.words[i] = ch.codePointAt(0) ?? SPACE
-      this.words[i + 1] = color
-      this.words[i + 2] = DEFAULT_COLOR
-    })
+  private drawFighter(g: Gfx, x: number, y: number): void {
+    const cy = y + FIGHTER_H / 2
+    const flick = 0.7 + Math.random() * 0.6
+    // engine plume
+    g.glow(x + 0.6, cy, 3.2 * flick, ENGINE, 0.9, 0.35)
+    g.poly([x + 1, cy - 0.55, x - 1.8 * flick, cy, x + 1, cy + 0.55], 0xffd27a, 0.9)
+    // wings: swept back, orange edge, cannons at the tips
+    for (const side of [-1, 1]) {
+      const tip = cy + side * 2.8
+      g.poly([x + 2.4, cy + side * 0.5, x + 7.2, cy + side * 0.6, x + 4.4, tip, x + 1.6, tip], WING)
+      g.poly([x + 1.6, tip, x + 4.4, tip, x + 4.1, tip - side * 0.5, x + 1.5, tip - side * 0.5], STRIPE)
+      g.line(x + 1.2, tip - side * 0.25, x + 6.6, tip - side * 0.25, 0.22, 0xc9ced6)
+      g.disc(x + 1.3, tip - side * 0.25, 0.3, 0x3a3f48)
+    }
+    // fuselage with a lower shade and a stripe
+    g.poly([x + 0.8, cy - 0.95, x + 9, cy - 0.85, x + FIGHTER_W, cy, x + 9, cy + 0.85, x + 0.8, cy + 0.95], HULL)
+    g.poly([x + 0.8, cy + 0.2, x + 10, cy + 0.2, x + FIGHTER_W, cy, x + 9, cy + 0.85, x + 0.8, cy + 0.95], HULL_SHADE, 0.55)
+    g.poly([x + 2, cy - 0.12, x + 9.4, cy - 0.08, x + 9.4, cy + 0.12, x + 2, cy + 0.14], STRIPE)
+    g.disc(x + 1, cy, 0.62, 0x2a2e36)
+    // canopy with a glint
+    g.poly([x + 6.6, cy - 0.15, x + 7.4, cy - 0.75, x + 9.3, cy - 0.65, x + 10, cy - 0.15], CANOPY)
+    g.disc(x + 8.4, cy - 0.5, 0.16, 0xffffff, 0.9)
+    if (this.shield > 0) g.glow(x + FIGHTER_W / 2, cy, FIGHTER_W * 0.62, SHIELD, 0.12 * this.shield, 0.45)
+  }
+
+  private drawEnemy(g: Gfx, x: number, y: number): void {
+    const cy = y + ENEMY_H / 2
+    g.glow(x + ENEMY_W - 1.2, cy, 2, 0xb04cff, 0.5, 0.5)
+    // blade wings, forward swept
+    for (const side of [-1, 1]) {
+      g.poly([x + 3.2, cy + side * 0.7, x + 6.8, cy + side * 2.9, x + 7.9, cy + side * 2.6, x + 5.2, cy + side * 0.4], ENEMY_WING)
+      g.line(x + 6.8, cy + side * 2.9, x + 7.9, cy + side * 2.6, 0.16, 0xb8c0cc)
+    }
+    // spike nose and pod
+    g.poly([x + 3, cy - 0.6, x, cy, x + 3, cy + 0.6], ENEMY_HULL)
+    g.disc(x + 4.2, cy, 1.45, ENEMY_HULL)
+    g.disc(x + 3.9, cy - 0.45, 0.6, 0x6c7684, 0.8)
+    // sensor eye
+    g.disc(x + 2.9, cy, 0.42, ENEMY_EYE)
+    g.glow(x + 2.9, cy, 1.6, ENEMY_EYE, 0.8)
   }
 }
 
-// Module state: a hot reload runs the module again and starts it over.
-let scene: Dogfight | null = null
-let site = ''
-let timer: Timer | null = null
-let park: Timer | null = null
-let denies = 0
-
-function stop(): void {
-  timer?.cancel()
-  timer = null
-  park?.cancel()
-  park = null
-}
-
-// The band is not mounted (a question or permission dialog holds the screen), so blits are
-// refused. When it comes back the engine repaints its cached answer without calling the render
-// hook, so nothing would restart the loop: ask for a redraw until the hook runs again. The redraw
-// also stops everything once the turn is over (isWorking false).
-function parkUntilMounted($: EngineInterface): void {
-  timer?.cancel()
-  timer = null
-  if (park) return
-  park = $.clock.every(PARK_MS, () => $.ui.invalidate('ui.render'))
-}
-
-function start($: EngineInterface): void {
-  park?.cancel()
-  park = null
-  if (timer) return
-  denies = 0
-  timer = $.clock.every(FRAME_MS, () => {
-    const current = scene
-    if (!current) return stop()
-    current.step()
-    void $.ui
-      .blit({ requestId: site, key: RASTER_KEY, cells: current.frame(), columns: current.columns, rows: current.rows })
-      .then(result => {
-        denies = result.deny ? denies + 1 : 0
-        if (denies >= MAX_DENIES) parkUntilMounted($)
-      })
-      .catch(() => parkUntilMounted($))
+export const register: Register = on =>
+  band(on, {
+    key: 'dogfight',
+    alt: ' ',
+    rows: 7,
+    minColumns: 30,
+    background: SKY_BOTTOM,
+    make: (width, height) => new Dogfight(width, height),
   })
-}
-
-export const register: Register = on => {
-  on('ui.render', { component: 'AbovePrompt' }, ($, e, next) => {
-    const isIdle = !e.props.isWorking || e.props.hasSurvey || e.props.isCollapsed
-    if (e.surface !== 'terminal' || isIdle || e.props.bodyColumns < MIN_COLUMNS) {
-      stop()
-      return next(e)
-    }
-    const columns = Math.min(e.props.bodyColumns, MAX_COLUMNS)
-    const rows = Math.min(BAND_ROWS, Math.max(e.props.maxRows, 1))
-    if (!scene || scene.columns !== columns || scene.rows !== rows) scene = new Dogfight(columns, rows)
-    site = e.requestId
-    start($)
-    const { Raster } = $.ui.resolve(e)
-    return Raster({ key: RASTER_KEY, columns, rows, cells: scene.frame() })
-  })
-
-  on('turn.complete', ($, e, next) => {
-    stop()
-    scene = null
-    $.ui.invalidate('ui.render')
-    return next(e)
-  })
-}

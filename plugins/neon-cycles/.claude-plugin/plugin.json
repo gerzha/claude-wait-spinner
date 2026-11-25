@@ -1,0 +1,9 @@
+{
+  "name": "neon-cycles",
+  "version": "0.1.0",
+  "description": "Two light cycles race on a neon grid above the prompt while Claude is working: Claude orange against cyan",
+  "author": {
+    "name": "gerzha",
+    "url": "https://github.com/gerzha"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "flaming-eye",
+  "version": "0.1.0",
+  "description": "A lidless eye wreathed in flame watches above the prompt while Claude is working; tool calls make it flare",
+  "author": {
+    "name": "gerzha",
+    "url": "https://github.com/gerzha"
+  }
+}

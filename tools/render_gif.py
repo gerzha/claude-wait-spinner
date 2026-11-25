@@ -89,10 +89,17 @@ def main() -> None:
     height = prompt_top + 2 * CH + 32
 
     images = []
-    for n, b64 in enumerate(data["frames"]):
+    for n, frame in enumerate(data["frames"]):
         img = Image.new("RGB", (width, height), BG)
         draw = ImageDraw.Draw(img)
-        draw_band(draw, cells(b64, columns, rows), columns, rows, (text_font, kana_font))
+        if isinstance(frame, str):  # older captures: raster cells only
+            frame = {"kind": "raster", "cells": frame}
+        if frame["kind"] == "image":
+            # A picture is scaled to fill its box of cells, as the terminal does.
+            pic = Image.frombytes("RGBA", (frame["width"], frame["height"]), base64.b64decode(frame["rgba"]))
+            img.paste(pic.convert("RGB").resize((columns * CW, rows * CH), Image.Resampling.BILINEAR), (PAD, PAD))
+        else:
+            draw_band(draw, cells(frame["cells"], columns, rows), columns, rows, (text_font, kana_font))
         draw_prompt(draw, prompt_top, width, text_font, (n // 8) % 2 == 0, label)
         images.append(img)
 
@@ -103,7 +110,8 @@ def main() -> None:
     palette = strip.quantize(colors=255, method=Image.Quantize.MEDIANCUT)
     frames = [i.quantize(palette=palette, dither=Image.Dither.NONE) for i in images]
     dst.parent.mkdir(parents=True, exist_ok=True)
-    frames[0].save(dst, save_all=True, append_images=frames[1:], duration=FRAME_MS, loop=0, optimize=True, disposal=1)
+    duration = data.get("frameMs", FRAME_MS)
+    frames[0].save(dst, save_all=True, append_images=frames[1:], duration=duration, loop=0, optimize=True, disposal=1)
     print(f"{dst}: {len(frames)} frames, {width}x{height}, {dst.stat().st_size // 1024} KB")
 
 
