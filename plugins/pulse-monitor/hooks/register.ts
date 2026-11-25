@@ -6,7 +6,7 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 // the beats per minute and the last tool. The row disappears when the turn ends.
 
 const FRAME_MS = 60
-const BAND_ROWS = 5
+const BAND_ROWS = 6
 const MAX_DENIES = 20 // consecutive refused blits before the loop parks itself
 const PARK_MS = 500 // while parked, how often to ask for a redraw of the band
 const RASTER_KEY = 'pulse'
@@ -30,16 +30,17 @@ const DOT_BITS = [
   [0x08, 0x10, 0x20, 0x80],
 ]
 
-// Phosphor, newest to oldest.
-const TRACE = [0xc8ffcc, 0x5cf27a, 0x34c255, 0x22903c, 0x17602a, 0x103f1d]
+// Phosphor, newest to oldest: only the head is bright, the tail settles to a dim glow fast.
+const TRACE = [0xe0ffe0, 0x86ff97, 0x52e06c, 0x38b954, 0x2a9343, 0x1f7334, 0x18582a, 0x134522]
+const FADE_SHARE = 0.45 // share of a sweep over which the trace dims to its last shade
 const HEART_ON = 0xff4d5e
 const HEART_OFF = 0x8a2a35
 const LABEL = 0x4f8a5c
 const VALUE = 0x9cf0a8
-const GRID = 0x123018
+const GRID = 0x0f2614
 
 // One PQRST complex, one sample per dot column: P bump, Q dip, R spike, S dip, T bump.
-const COMPLEX = [0, 0.05, 0.1, 0.11, 0.06, 0, 0, -0.07, 0.55, 1, 0.3, -0.3, -0.08, 0, 0, 0.05, 0.12, 0.17, 0.17, 0.12, 0.05, 0]
+const COMPLEX = [0, 0.05, 0.1, 0.11, 0.06, 0, 0, -0.07, 1, -0.3, -0.08, 0, 0, 0, 0.05, 0.12, 0.17, 0.17, 0.12, 0.05, 0]
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 const B64_CODES = Array.from(B64).map(ch => ch.charCodeAt(0))
@@ -90,8 +91,8 @@ class Monitor {
     this.traceColumns = columns >= 40 ? columns - READOUT_COLUMNS : columns
     this.dotsWide = this.traceColumns * 2
     this.dotsHigh = rows * 4
-    this.baseline = Math.round(this.dotsHigh * 0.68)
-    this.amplitude = this.dotsHigh * 0.6
+    this.baseline = Math.round(this.dotsHigh * 0.66)
+    this.amplitude = this.dotsHigh * 0.72
     this.lastY = this.baseline
     this.top = new Int16Array(this.dotsWide).fill(-1)
     this.bottom = new Int16Array(this.dotsWide).fill(-1)
@@ -121,7 +122,7 @@ class Monitor {
     let value = 0
     if (this.beatPos >= 0) {
       value = COMPLEX[this.beatPos] ?? 0
-      if (this.beatPos === 9) this.heartGlow = 4
+      if ((COMPLEX[this.beatPos] ?? 0) >= 1) this.heartGlow = 4 // the R peak
       this.beatPos += 1
       if (this.beatPos >= COMPLEX.length) {
         this.beatPos = -1
@@ -130,12 +131,13 @@ class Monitor {
     } else if (--this.untilBeat <= 0) {
       this.beatPos = 0
     }
-    const noise = (Math.random() - 0.5) * 0.04
-    const y = Math.max(0, Math.min(this.dotsHigh - 1, Math.round(this.baseline - (value + noise) * this.amplitude)))
+    const y = Math.max(0, Math.min(this.dotsHigh - 1, Math.round(this.baseline - value * this.amplitude)))
     const x = this.head
-    // Join to the previous sample so steep strokes stay continuous.
-    this.top[x] = Math.min(y, this.lastY)
-    this.bottom[x] = Math.max(y, this.lastY)
+    // One dot a column; a steep stroke fills down (or up) to just short of the last dot, so
+    // the line stays one dot thin and still unbroken.
+    const toward = y > this.lastY ? this.lastY + 1 : y < this.lastY ? this.lastY - 1 : y
+    this.top[x] = Math.min(y, toward)
+    this.bottom[x] = Math.max(y, toward)
     this.written[x] = this.frameNo
     this.lastY = y
     this.head = (this.head + 1) % this.dotsWide
@@ -148,8 +150,8 @@ class Monitor {
 
   private colorOf(dotColumn: number): number {
     const age = this.frameNo - (this.written[dotColumn] ?? 0)
-    const sweepFrames = this.dotsWide / SPEED
-    const shade = age <= 1 ? 0 : Math.min(TRACE.length - 1, 1 + Math.floor((age / sweepFrames) * (TRACE.length - 1)))
+    const fadeFrames = (this.dotsWide / SPEED) * FADE_SHARE
+    const shade = age <= 1 ? 0 : Math.min(TRACE.length - 1, 1 + Math.floor((age / fadeFrames) * (TRACE.length - 2)))
     return TRACE[shade] ?? TRACE[TRACE.length - 1]!
   }
 

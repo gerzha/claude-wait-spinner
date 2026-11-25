@@ -1,6 +1,9 @@
 {
   "name": "pulse-monitor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A heart-monitor trace above the prompt while Claude is working; every tool call fires a beat",
-  "author": { "name": "gerzha", "url": "https://github.com/gerzha" }
+  "author": {
+    "name": "gerzha",
+    "url": "https://github.com/gerzha"
+  }
 }

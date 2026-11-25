@@ -62,7 +62,7 @@ def draw_band(draw: ImageDraw.ImageDraw, frame, columns: int, rows: int, fonts) 
                 if bits & bit:
                     dx = x0 + (2.5 if col == 0 else 6.5)
                     dy = y0 + 2.5 + row * 5
-                    draw.ellipse([dx - 1.6, dy - 1.6, dx + 1.6, dy + 1.6], fill=fore)
+                    draw.ellipse([dx - 1.15, dy - 1.15, dx + 1.15, dy + 1.15], fill=fore)
         else:
             ch = chr(cp)
             font = kana_font if 0xFF61 <= cp <= 0xFF9F else text_font
