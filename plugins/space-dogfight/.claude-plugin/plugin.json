@@ -1,0 +1,9 @@
+{
+  "name": "space-dogfight",
+  "version": "0.1.0",
+  "description": "A starfighter dogfight above the prompt while Claude is working: a rebel fighter shoots down enemy interceptors",
+  "author": {
+    "name": "gerzha",
+    "url": "https://github.com/gerzha"
+  }
+}
