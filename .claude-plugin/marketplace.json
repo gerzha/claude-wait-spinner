@@ -1,0 +1,12 @@
+{
+  "name": "wait-spinners",
+  "description": "Animations Claude Code shows above the prompt while Claude is working",
+  "owner": { "name": "gerzha" },
+  "plugins": [
+    {
+      "name": "matrix-rain",
+      "source": "./plugins/matrix-rain",
+      "description": "Matrix-style katakana rain in Claude orange above the prompt while Claude is working"
+    }
+  ]
+}
