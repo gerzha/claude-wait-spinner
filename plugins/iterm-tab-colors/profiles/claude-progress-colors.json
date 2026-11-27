@@ -1,0 +1,84 @@
+{
+  "Profiles": [
+    {
+      "Name": "Claude Blue",
+      "Guid": "8152EE54-35DC-5E45-ABF5-31992D2A6E50",
+      "Dynamic Profile Parent Name": "Default",
+      "Progress Bar Color Scheme": "blue",
+      "Enable Progress Bars": true,
+      "Tags": [
+        "Claude"
+      ]
+    },
+    {
+      "Name": "Claude Orange",
+      "Guid": "9D67BF1F-895C-5289-948E-F52CCA1A57BB",
+      "Dynamic Profile Parent Name": "Default",
+      "Progress Bar Color Scheme": "orange",
+      "Enable Progress Bars": true,
+      "Tags": [
+        "Claude"
+      ]
+    },
+    {
+      "Name": "Claude Purple",
+      "Guid": "82AF3DB4-C277-5FD2-BF24-51111DCA3B37",
+      "Dynamic Profile Parent Name": "Default",
+      "Progress Bar Color Scheme": "purple",
+      "Enable Progress Bars": true,
+      "Tags": [
+        "Claude"
+      ]
+    },
+    {
+      "Name": "Claude Cyan",
+      "Guid": "B00700D9-86DF-5007-835A-A0133269D55B",
+      "Dynamic Profile Parent Name": "Default",
+      "Progress Bar Color Scheme": "cyan",
+      "Enable Progress Bars": true,
+      "Tags": [
+        "Claude"
+      ]
+    },
+    {
+      "Name": "Claude Yellow",
+      "Guid": "576D12F8-CC2A-56B3-94E1-148AAA191600",
+      "Dynamic Profile Parent Name": "Default",
+      "Progress Bar Color Scheme": "yellow",
+      "Enable Progress Bars": true,
+      "Tags": [
+        "Claude"
+      ]
+    },
+    {
+      "Name": "Claude Red",
+      "Guid": "1589A2BC-D579-5BBE-8C28-8C736833EF00",
+      "Dynamic Profile Parent Name": "Default",
+      "Progress Bar Color Scheme": "red",
+      "Enable Progress Bars": true,
+      "Tags": [
+        "Claude"
+      ]
+    },
+    {
+      "Name": "Claude Green",
+      "Guid": "7A0D6FE3-835B-5DA1-91A4-57B7DFC4E9E7",
+      "Dynamic Profile Parent Name": "Default",
+      "Progress Bar Color Scheme": "green",
+      "Enable Progress Bars": true,
+      "Tags": [
+        "Claude"
+      ]
+    },
+    {
+      "Name": "Claude Rainbow",
+      "Guid": "E54D4374-A116-502E-91CD-7D5C5B9145C0",
+      "Dynamic Profile Parent Name": "Default",
+      "Progress Bar Color Scheme": "rainbow",
+      "Enable Progress Bars": true,
+      "Tags": [
+        "Claude"
+      ]
+    }
+  ]
+}

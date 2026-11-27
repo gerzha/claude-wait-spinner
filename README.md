@@ -5,7 +5,8 @@ The animation disappears as soon as the turn ends, and picks up again after a qu
 permission dialog. Terminal only; desktop, VS Code and mobile are left as they are.
 No settings, no network, no files: each spinner is one hooks module.
 
-Each spinner draws its own row, so install one at a time:
+Each spinner draws its own row, so install one at a time (`iterm-tab-colors` below combines
+with either):
 
 ```
 /plugin install <spinner> --marketplace gerzha/claude-wait-spinner
@@ -25,6 +26,38 @@ A heart monitor: a phosphor-green trace sweeps across in braille dots. Every too
 makes fires an extra beat and quickens the pulse; the readout shows the BPM and the last tool.
 
 ![pulse-monitor](docs/pulse-monitor.gif)
+
+## `iterm-tab-colors`
+
+Not a spinner, so it goes along with either of them. For iTerm2 3.7+ on macOS: while Claude
+is working, iTerm2 draws a progress ring around the tab, and this plugin gives every Claude
+session its own ring colour, so a sidebar full of busy tabs tells them apart at a glance.
+
+On session start a hook picks a colour that no other running Claude tab holds (blue, orange,
+purple, cyan, yellow, red, green, then rainbow) and switches the tab to the matching
+`Claude <Colour>` profile. A tab keeps its colour across `/clear`, resume and restarts of
+Claude in it; the colour is freed once no Claude runs in that tab. Switching the profile
+resets the tab title, so the hook sends the session title again right after.
+
+Set up iTerm2 once:
+
+- Settings → Appearance → General → Theme: Regular, Light or Dark. Only these tab styles draw
+  the ring; Minimal and Compact draw a thin line instead.
+- Settings → Advanced: "Prevent control sequences from changing the current profile?" → No.
+- Keep Claude Code's "Terminal progress bar" on in `/config` (it is on by default).
+
+On first run the hook copies `claude-progress-colors.json` into
+`~/Library/Application Support/iTerm2/DynamicProfiles/`: eight profiles that inherit from your
+profile named `Default` and change only the ring colour. Tabs on any other profile (a hotkey
+window, an ssh profile) are left alone. Edit the installed file to restyle; delete it to get
+the stock one back. The colour each tab holds is kept in `~/.claude/state/iterm-tab-colors/`.
+
+To colour a tab where Claude is already running, pass its tty (and optionally the transcript,
+for the title):
+
+```sh
+bash plugins/iterm-tab-colors/hooks/iterm-tab-color.sh ttys003 ~/.claude/projects/<project>/<session>.jsonl
+```
 
 ## Develop
 

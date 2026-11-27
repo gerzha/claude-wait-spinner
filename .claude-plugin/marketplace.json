@@ -1,6 +1,6 @@
 {
   "name": "wait-spinners",
-  "description": "Animations Claude Code shows above the prompt while Claude is working",
+  "description": "Cues that Claude Code is working: animations above the prompt and per-tab progress-ring colours in iTerm2",
   "owner": {
     "name": "gerzha"
   },
@@ -14,6 +14,11 @@
       "name": "pulse-monitor",
       "source": "./plugins/pulse-monitor",
       "description": "A heart-monitor trace above the prompt while Claude is working; every tool call fires a beat"
+    },
+    {
+      "name": "iterm-tab-colors",
+      "source": "./plugins/iterm-tab-colors",
+      "description": "Gives every Claude Code session in iTerm2 its own progress-ring colour on the tab"
     }
   ]
 }

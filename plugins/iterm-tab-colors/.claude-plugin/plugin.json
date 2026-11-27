@@ -1,0 +1,6 @@
+{
+  "name": "iterm-tab-colors",
+  "version": "0.1.0",
+  "description": "Gives every Claude Code session in iTerm2 its own progress-ring colour on the tab",
+  "author": { "name": "gerzha", "url": "https://github.com/gerzha" }
+}
