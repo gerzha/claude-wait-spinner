@@ -39,6 +39,8 @@ purple, cyan, yellow, red, green, then rainbow) and switches the tab to the matc
 Claude in it; the colour is freed once no Claude runs in that tab. Switching the profile
 resets the tab title, so the hook sends the session title again right after.
 
+![iterm-tab-colors](docs/iterm-tab-colors.png)
+
 Set up iTerm2 once:
 
 - Settings → Appearance → General → Theme: Regular, Light or Dark. Only these tab styles draw
